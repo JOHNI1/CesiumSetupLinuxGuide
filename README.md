@@ -159,7 +159,48 @@ This places `Reinterop.dll` in the package root so Unity can load it as a Roslyn
 
 ---
 
-## 5. Open the Project in Unity to Generate Reinterop Output
+## 5. Fix `native~/CMakeLists.txt` so `REINTEROP_GENERATED_DIRECTORY` follows `EDITOR`
+
+After publishing `Reinterop.dll`, patch the native CMake configuration so it selects the correct generated bridge folder depending on whether you are building the **Editor** or **Standalone/runtime** native plugin.
+
+Open:
+
+```bash
+gedit /path/to/YourUnityProject/Packages/com.cesium.unity/native~/CMakeLists.txt
+```
+
+Find this line:
+
+```cmake
+set(REINTEROP_GENERATED_DIRECTORY "generated-Editor" CACHE STRING "The subdirectory of each native library in which the Reinterop-generated code is found.")
+```
+
+Replace it with:
+
+```cmake
+if (EDITOR)
+  set(REINTEROP_GENERATED_DIRECTORY "generated-Editor")
+else()
+  set(REINTEROP_GENERATED_DIRECTORY "generated-Standalone")
+endif()
+```
+
+### Why this step is required
+
+By default, the native CMake file is hardcoded to use `generated-Editor`. That is acceptable only when building with `-DEDITOR=ON`.
+
+But for a **Standalone/runtime** build with `-DEDITOR=OFF`, the native build must consume the headers and source files from **`generated-Standalone`**, not `generated-Editor`.
+
+Without this patch, CMake keeps looking in the editor-generated bridge directory even when you are trying to build the runtime plugin. That causes mismatches and leads to missing `DotNet/...` headers or to a build that silently points at the wrong generated bridge.
+
+This patch makes the generated bridge directory follow the meaning of the `EDITOR` flag correctly:
+
+- `EDITOR=ON` → use `generated-Editor`
+- `EDITOR=OFF` → use `generated-Standalone`
+
+---
+
+## 6. Open the Project in Unity to Generate Reinterop Output
 
 Open the Unity project from Unity Hub.
 
@@ -231,7 +272,7 @@ For this Linux setup, **starting with the Standalone/runtime path is recommended
 
 ---
 
-## 6. Fix `UnityWebRequestAssetAccessor.h` and `.cpp`
+## 7. Fix `UnityWebRequestAssetAccessor.h` and `.cpp`
 
 On this Linux toolchain, the Cesium native source uses `std::optional` and `std::make_optional` in `UnityWebRequestAssetAccessor.h` and `UnityWebRequestAssetAccessor.cpp`, but those files do not explicitly include `<optional>`.
 
@@ -265,7 +306,7 @@ sed -n '24,32p' native~/src/Runtime/UnityWebRequestAssetAccessor.cpp
 
 ---
 
-## 7. Create a Custom Linux vcpkg Triplet
+## 8. Create a Custom Linux vcpkg Triplet
 
 Cesium ships triplets for several targets, but not the Linux Unity target we need here. Create a custom one:
 
@@ -289,7 +330,7 @@ set(VCPKG_LIBRARY_PREFIX "")
 
 ---
 
-## 8. Build the Native Plugin
+## 9. Build the Native Plugin
 
 This section is the key Linux-specific part.
 
@@ -364,7 +405,7 @@ Use it when you want the explicit Editor target, or when you are testing purely 
 
 ---
 
-## 9. Restart Unity
+## 10. Restart Unity
 
 After the native build installs successfully, reopen the Unity project.
 
@@ -372,7 +413,7 @@ At that point Unity should be able to load the installed native plugin instead o
 
 ---
 
-## 10. Done
+## 11. Done
 
 With these changes:
 
