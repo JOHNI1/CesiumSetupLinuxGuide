@@ -253,8 +253,8 @@ Try forcing Reinterop to rerun by touching the configuration files:
 
 ```bash
 cd /path/to/YourUnityProject/Packages/com.cesium.unity
-echo "// force reinterop" >> Runtime/ConfigureReinterop.cs
-echo "// force reinterop" >> Editor/ConfigureReinterop.cs
+echo "// force reinterop" >> Source/Runtime/ConfigureReinterop.cs
+echo "// force reinterop" >> Source/Editor/ConfigureReinteropEditor.cs
 ```
 
 Then reopen Unity and let it recompile.
@@ -317,6 +317,7 @@ Optional verification:
 
 ```bash
 sed -n '14,22p' native~/src/Runtime/UnityWebRequestAssetAccessor.h
+echo '--------------------------------'
 sed -n '24,32p' native~/src/Runtime/UnityWebRequestAssetAccessor.cpp
 ```
 
@@ -376,6 +377,7 @@ Use this after you have generated `generated-Standalone` from Unity by doing a t
 ```bash
 cd /path/to/YourUnityProject/Packages/com.cesium.unity/native~
 
+rm -rf build-Standalone
 cmake -B build-Standalone -S . \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DVCPKG_TRIPLET=x64-linux-unity \
@@ -403,6 +405,7 @@ Use this if you specifically want to build against the Editor-generated bridge.
 ```bash
 cd /path/to/YourUnityProject/Packages/com.cesium.unity/native~
 
+rm -rf build-Editor
 cmake -B build-Editor -S . \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DVCPKG_TRIPLET=x64-linux-unity \
