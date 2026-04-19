@@ -22,6 +22,22 @@ This guide documents a Linux-specific developer setup for **Cesium for Unity v1.
 
 ---
 
+
+## Prerequisite Packages on Ubuntu
+
+If you get a Reinterop error about the `dotnet` SDK being missing or the wrong version, install the .NET SDK explicitly.
+
+If native CMake compilation fails because standard compiler/build tools are missing, install `cmake` and `build-essential`.
+
+`nasm` is also recommended because it can be used for faster JPEG decoding in native dependencies.
+
+```bash
+sudo apt update
+sudo apt install git cmake nasm build-essential dotnet-sdk-10.0
+```
+
+---
+
 ## Original Documentation
 
 The official starting point is Cesium for Unity's `developer-setup.md`:
