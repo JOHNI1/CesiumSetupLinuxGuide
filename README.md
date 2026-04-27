@@ -1,6 +1,6 @@
-# Cesium for Unity (v1.23.1) – Developer Setup on Ubuntu 22.04 with Unity 2022.3
+# Cesium for Unity (v1.23.1) – Developer Setup on Ubuntu 24.04 with Unity 6.3 LTS
 
-This guide documents a Linux-specific developer setup for **Cesium for Unity v1.23.1** on **Ubuntu 22.04** with **Unity 2022.3 LTS**.
+This guide documents a Linux-specific developer setup for **Cesium for Unity v1.23.1** on **Ubuntu 24.04** with **Unity 6.3 LTS**.
 
 The upstream Cesium developer setup is the starting point, but on Linux a few extra adjustments are needed so that:
 
@@ -45,7 +45,7 @@ So the correct sequence is:
 
 1. prepare Reinterop
 2. allow Cesium to compile on Linux
-3. patch native CMake and Linux-specific native sources
+3. patch native CMake
 4. open Unity once so it generates **`generated-Editor`**
 5. build **Editor** native with `-DEDITOR=ON`
 6. confirm Unity Editor works
@@ -55,13 +55,9 @@ So the correct sequence is:
 
 ## System Environment
 
-- **OS:** Ubuntu 22.04.5 LTS
+- **OS:** Ubuntu 24.04 LTS
   - Architecture: 64-bit
-  - Windowing System: X11
-  - GNOME Version: 42.9
-- **Unity Editor:** 2022.3.62f3
-- **Unity Hub:** 3.11.1
-- **.NET SDK installed:** `.NET 10.0.106`
+- **Unity Editor:** 6.3 LTS
 - **Cesium for Unity:** `v1.23.1`
 
 ---
@@ -93,9 +89,10 @@ This README overrides a few steps for Linux compatibility and for a working nati
 
 ## 0. Add cesium to package-lock.json
 
-inside "dependencies": 
-add the package "com.cesium.unity": "file:com.cesium.unity",
+inside "dependencies":  
+add the package `"com.cesium.unity": "file:com.cesium.unity",`
 
+---
 
 ## 1. Clone the Repository into your Unity Project
 
@@ -265,42 +262,7 @@ This patch makes the generated bridge directory follow the meaning of the `EDITO
 
 ---
 
-## 6. Fix `UnityWebRequestAssetAccessor.h` and `.cpp`
-
-On this Linux toolchain, the Cesium native source uses `std::optional` and `std::make_optional` in `UnityWebRequestAssetAccessor.h` and `UnityWebRequestAssetAccessor.cpp`, but those files do not explicitly include `<optional>`.
-
-That can compile on some environments if another header indirectly pulls `<optional>` in by accident, but it fails here because the files are not self-contained enough for this compiler/include order.
-
-### Why this fix is required precisely
-
-Without this fix, the native C++ build fails with errors like:
-
-- `std::optional in namespace std does not name a template type`
-- `std::make_optional is not a member of std`
-- `_maybeResponse does not exist`
-
-Those are cascade errors caused by the missing `<optional>` include.
-
-So before building native code, patch both files:
-
-```bash
-cd /path/to/YourUnityProject/Packages/com.cesium.unity
-
-sed -i '19i #include <optional>' native~/src/Runtime/UnityWebRequestAssetAccessor.h
-sed -i '29i #include <optional>' native~/src/Runtime/UnityWebRequestAssetAccessor.cpp
-```
-
-Optional verification:
-
-```bash
-sed -n '14,22p' native~/src/Runtime/UnityWebRequestAssetAccessor.h
-echo '--------------------------------'
-sed -n '24,32p' native~/src/Runtime/UnityWebRequestAssetAccessor.cpp
-```
-
----
-
-## 7. Create a Custom Linux vcpkg Triplet
+## 6. Create a Custom Linux vcpkg Triplet
 
 Cesium ships triplets for several targets, but not the Linux Unity target we need here. Create a custom one:
 
@@ -338,7 +300,7 @@ then this is the native target you must build first.
 
 ---
 
-## 8. Open the Project in Unity to Generate Editor Reinterop Output
+## 7. Open the Project in Unity to Generate Editor Reinterop Output
 
 Open the Unity project from Unity Hub.
 
@@ -383,7 +345,7 @@ Then reopen Unity and let it recompile.
 
 ---
 
-## 9. Build the Editor native plugin
+## 8. Build the Editor native plugin
 
 Now build the native plugin for the **Unity Editor process**.
 
@@ -423,7 +385,7 @@ Typical editor-side failure symptoms include:
 
 ---
 
-## 10. Restart Unity and verify the Editor now works
+## 9. Restart Unity and verify the Editor now works
 
 After the Editor native build installs successfully, reopen the Unity project.
 
@@ -443,7 +405,7 @@ This is the build path for the **final Linux player/runtime package** of your ga
 
 ---
 
-## 11. Generate `generated-Standalone` by doing one temporary Unity player build
+## 10. Generate `generated-Standalone` by doing one temporary Unity player build
 
 Opening the Unity project is usually enough to create **`generated-Editor`**, but **not** necessarily **`generated-Standalone`**.
 
@@ -475,7 +437,7 @@ If that folder does not exist yet, the runtime native build will fail or will po
 
 ---
 
-## 12. Build the Standalone/runtime native plugin
+## 11. Build the Standalone/runtime native plugin
 
 After `generated-Standalone` exists, build the runtime native plugin:
 
@@ -506,14 +468,13 @@ This native plugin is for the **final Linux game/player runtime**, not for the U
 
 ---
 
-## 13. Final result
+## 12. Final result
 
 With these changes:
 
 - Reinterop is published in a form Unity can load.
 - Cesium is allowed to compile on Linux.
 - the generated `DotNet/...` bridge headers are generated correctly.
-- `UnityWebRequestAssetAccessor.*` is patched for this Linux toolchain.
 - the **Editor** native plugin is built first and used by the Unity Editor.
 - the **Standalone/runtime** native plugin is built later and used by the final Linux player.
 
@@ -530,17 +491,16 @@ For this Ubuntu/Linux workflow, the recommended path is:
 3. patch `Source/CesiumForUnity.asmdef`
 4. publish `Reinterop.dll`
 5. patch `native~/CMakeLists.txt`
-6. patch `UnityWebRequestAssetAccessor.h/.cpp`
-7. create `native~/vcpkg/triplets/x64-linux-unity.cmake`
-8. open Unity once to generate **`generated-Editor`**
-9. build native with **`build-Editor`** and **`-DEDITOR=ON`**
-10. reopen Unity and confirm the editor works
+6. create `native~/vcpkg/triplets/x64-linux-unity.cmake`
+7. open Unity once to generate **`generated-Editor`**
+8. build native with **`build-Editor`** and **`-DEDITOR=ON`**
+9. reopen Unity and confirm the editor works
 
 ### Stage 2 — Prepare the delivered Linux player/runtime
 
-11. do one temporary Unity Linux player build to force **`generated-Standalone`**
-12. build native with **`build-Standalone`** and **`-DEDITOR=OFF`**
-13. use that runtime plugin path for the final delivered Linux game
+10. do one temporary Unity Linux player build to force **`generated-Standalone`**
+11. build native with **`build-Standalone`** and **`-DEDITOR=OFF`**
+12. use that runtime plugin path for the final delivered Linux game
 
 ---
 
