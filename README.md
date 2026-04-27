@@ -1,11 +1,55 @@
 # Cesium for Unity (v1.23.1) – Developer Setup on Ubuntu 22.04 with Unity 2022.3
 
-This guide documents a Linux-specific developer setup for **Cesium for Unity v1.23.1** on **Ubuntu 22.04** with **Unity 2022.3 LTS**. The upstream Cesium developer setup is the starting point, but on Linux a few extra adjustments are needed so that:
+This guide documents a Linux-specific developer setup for **Cesium for Unity v1.23.1** on **Ubuntu 22.04** with **Unity 2022.3 LTS**.
+
+The upstream Cesium developer setup is the starting point, but on Linux a few extra adjustments are needed so that:
 
 - **Reinterop** is published in a form Unity accepts.
 - the Cesium assembly is compiled on Linux.
 - the generated `DotNet/...` bridge headers appear correctly.
-- the native C++ plugin can be built for either **Editor** or **Standalone**.
+- the native C++ plugin can be built correctly for **Editor** first, and then for **Standalone/runtime**.
+
+---
+
+## Critical clarification before you start
+
+There are **two different native plugin targets** in this setup, and they are **not interchangeable**:
+
+- **Editor native plugin**
+  - built with `-DEDITOR=ON`
+  - uses `generated-Editor`
+  - required for the **Unity Editor process itself**
+  - required to stop Editor-time Cesium/Reinterop initialization errors such as:
+    - `DllNotFoundException: CesiumForUnityNative`
+    - `The native library is out of sync with the managed one`
+
+- **Standalone/runtime native plugin**
+  - built with `-DEDITOR=OFF`
+  - uses `generated-Standalone`
+  - required for the **final built Linux game/player**
+  - **not sufficient** to make the Unity Editor work correctly
+
+### Important correction to a common misunderstanding
+
+For Linux development, you should **build the Editor native plugin first**.
+
+Do **not** start by prioritizing the Standalone build if your immediate goal is simply to open the Unity project and work with Cesium inside the Unity Editor.
+
+Why:
+
+- Unity Editor startup loads the **Editor** native plugin, not the Standalone one.
+- If you only build `build-Standalone`, Unity Editor may still fail because `Packages/com.cesium.unity/Editor/libCesiumForUnityNative.so` is missing, stale, or built from the wrong generated bridge.
+- A Standalone build is for the **delivered Linux player**, not for the editor process.
+
+So the correct sequence is:
+
+1. prepare Reinterop
+2. allow Cesium to compile on Linux
+3. patch native CMake and Linux-specific native sources
+4. open Unity once so it generates **`generated-Editor`**
+5. build **Editor** native with `-DEDITOR=ON`
+6. confirm Unity Editor works
+7. only then prepare **Standalone/runtime** by forcing Unity to generate **`generated-Standalone`** and building with `-DEDITOR=OFF`
 
 ---
 
@@ -21,7 +65,6 @@ This guide documents a Linux-specific developer setup for **Cesium for Unity v1.
 - **Cesium for Unity:** `v1.23.1`
 
 ---
-
 
 ## Prerequisite Packages on Ubuntu
 
@@ -47,6 +90,12 @@ The official starting point is Cesium for Unity's `developer-setup.md`:
 This README overrides a few steps for Linux compatibility and for a working native build flow on Ubuntu.
 
 ---
+
+## 0. Add cesium to package-lock.json
+
+inside "dependencies": 
+add the package "com.cesium.unity": "file:com.cesium.unity",
+
 
 ## 1. Clone the Repository into your Unity Project
 
@@ -216,79 +265,7 @@ This patch makes the generated bridge directory follow the meaning of the `EDITO
 
 ---
 
-## 6. Open the Project in Unity to Generate Reinterop Output
-
-Open the Unity project from Unity Hub.
-
-Expected behavior:
-
-- Unity compiles the Cesium C# side.
-- Reinterop runs during compilation.
-- native bridge code is generated under `native~/generated-*`.
-
-You may see `DllNotFoundException` for the native plugin at this stage. That is expected before the native C++ plugin is built.
-
-After Unity finishes compiling, close it and check for generated folders:
-
-```bash
-cd /path/to/YourUnityProject/Packages/com.cesium.unity
-find native~ -iname "*dotnet*" -type d
-find native~ -maxdepth 2 -type d -name "generated-*"
-```
-
-### Expected result after only opening Unity
-
-Usually you will first get:
-
-```text
-native~/generated-Editor/include/DotNet
-native~/generated-Editor/src/DotNet
-```
-
-That means the **Editor** interop bridge has been generated.
-
-### If no `DotNet` folders appear
-
-Try forcing Reinterop to rerun by touching the configuration files:
-
-```bash
-cd /path/to/YourUnityProject/Packages/com.cesium.unity
-echo "// force reinterop" >> Source/Runtime/ConfigureReinterop.cs
-echo "// force reinterop" >> Source/Editor/ConfigureReinteropEditor.cs
-```
-
-Then reopen Unity and let it recompile.
-
-### Important: how to get `generated-Standalone`
-
-Opening the Unity project is usually enough to create **`generated-Editor`**, but **not** necessarily **`generated-Standalone`**.
-
-To get `generated-Standalone`, you must temporarily make a Unity player build once:
-
-1. open the project in Unity
-2. go to **File → Build Settings**
-3. select **Linux** as the target platform
-4. click **Build**
-5. choose any temporary output folder
-6. wait until Unity has finished the player build preparation
-
-After that, re-check:
-
-```bash
-find native~ -maxdepth 2 -type d -name "generated-*"
-```
-
-You should now have a **`generated-Standalone`** folder as well.
-
-You can discard the temporary built game afterward. The important result is that Unity has generated the **Standalone** Reinterop bridge.
-
-### Why generating `generated-Standalone` is recommended
-
-For this Linux setup, **starting with the Standalone/runtime path is recommended** because the Standalone native build is the one needed for the final delivered game, and in practice it is the more generally useful native target to prepare first. If you generate `generated-Standalone` early, your runtime native build can proceed cleanly and you avoid later confusion about why `-DEDITOR=OFF` fails.
-
----
-
-## 7. Fix `UnityWebRequestAssetAccessor.h` and `.cpp`
+## 6. Fix `UnityWebRequestAssetAccessor.h` and `.cpp`
 
 On this Linux toolchain, the Cesium native source uses `std::optional` and `std::make_optional` in `UnityWebRequestAssetAccessor.h` and `UnityWebRequestAssetAccessor.cpp`, but those files do not explicitly include `<optional>`.
 
@@ -323,7 +300,7 @@ sed -n '24,32p' native~/src/Runtime/UnityWebRequestAssetAccessor.cpp
 
 ---
 
-## 8. Create a Custom Linux vcpkg Triplet
+## 7. Create a Custom Linux vcpkg Triplet
 
 Cesium ships triplets for several targets, but not the Linux Unity target we need here. Create a custom one:
 
@@ -347,32 +324,160 @@ set(VCPKG_LIBRARY_PREFIX "")
 
 ---
 
-## 9. Build the Native Plugin
+# Part A — Build the Editor native plugin first
 
-This section is the key Linux-specific part.
+This section is the **required first native build** for Linux development in Unity.
 
-The CMake flag `-DEDITOR=...` determines **which generated Reinterop bridge** and **which native target type** CMake will build against.
+If your immediate goal is to:
 
-### What `-DEDITOR` means precisely
+- open the Unity project successfully
+- stop editor-side Reinterop/Cesium initialization failures
+- use Cesium inside the Unity Editor
 
-- `-DEDITOR=ON`
-  - Build the **Editor native plugin**
-  - Uses **`generated-Editor`**
-  - Intended for Editor-specific native integration
-
-- `-DEDITOR=OFF`
-  - Build the **Standalone/runtime native plugin**
-  - Uses **`generated-Standalone`**
-  - Intended for the actual runtime/player build
-  - This is the recommended main target to prepare first on Linux
-
-So if you only have `generated-Editor`, a build with `-DEDITOR=OFF` will fail because the Standalone-generated `DotNet/...` headers do not exist yet.
+then this is the native target you must build first.
 
 ---
 
-### 8A. Build type 1: `build-Standalone` (recommended)
+## 8. Open the Project in Unity to Generate Editor Reinterop Output
 
-Use this after you have generated `generated-Standalone` from Unity by doing a temporary Unity player build once.
+Open the Unity project from Unity Hub.
+
+Expected behavior:
+
+- Unity compiles the Cesium C# side.
+- Reinterop runs during compilation.
+- native bridge code is generated under `native~/generated-*`.
+
+You may still see `DllNotFoundException` for the native plugin at this stage. That is expected **before** the native C++ plugin is built.
+
+After Unity finishes compiling, close it and check for generated folders:
+
+```bash
+cd /path/to/YourUnityProject/Packages/com.cesium.unity
+find native~ -iname "*dotnet*" -type d
+find native~ -maxdepth 2 -type d -name "generated-*"
+```
+
+### Expected result at this stage
+
+After only opening Unity, you usually want to see:
+
+```text
+native~/generated-Editor/include/DotNet
+native~/generated-Editor/src/DotNet
+```
+
+That means the **Editor** interop bridge has been generated.
+
+### If no `DotNet` folders appear
+
+Try forcing Reinterop to rerun by touching the configuration files:
+
+```bash
+cd /path/to/YourUnityProject/Packages/com.cesium.unity
+echo "// force reinterop" >> Source/Runtime/ConfigureReinterop.cs
+echo "// force reinterop" >> Source/Editor/ConfigureReinteropEditor.cs
+```
+
+Then reopen Unity and let it recompile.
+
+---
+
+## 9. Build the Editor native plugin
+
+Now build the native plugin for the **Unity Editor process**.
+
+```bash
+cd /path/to/YourUnityProject/Packages/com.cesium.unity/native~
+
+rm -rf build-Editor
+cmake -B build-Editor -S . \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DVCPKG_TRIPLET=x64-linux-unity \
+  -DVCPKG_OVERLAY_TRIPLETS=$(pwd)/vcpkg/triplets \
+  -DEDITOR=ON \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+cmake --build build-Editor --target install --parallel $(nproc)
+```
+
+### What this build is for
+
+This is the **Editor native plugin** build.
+
+It must pair with:
+
+- `generated-Editor`
+- `-DEDITOR=ON`
+
+This is the native library Unity Editor itself needs in order to initialize Cesium/Reinterop correctly on Linux.
+
+### Why this build must come first
+
+If you build only `build-Standalone` and skip `build-Editor`, Unity Editor can still fail because the Editor plugin remains missing, stale, or mismatched.
+
+Typical editor-side failure symptoms include:
+
+- `DllNotFoundException: CesiumForUnityNative`
+- `The native library is out of sync with the managed one`
+
+---
+
+## 10. Restart Unity and verify the Editor now works
+
+After the Editor native build installs successfully, reopen the Unity project.
+
+At this point, Unity should be able to load the installed Editor native plugin instead of throwing editor-time Cesium/Reinterop initialization errors.
+
+Do not move on to Standalone/runtime until this works.
+
+---
+
+# Part B — Standalone/runtime build for the delivered Linux game
+
+This section is **separate** from the Editor setup.
+
+Use this part only **after** the Unity Editor is already working correctly with the Editor native plugin.
+
+This is the build path for the **final Linux player/runtime package** of your game that uses Cesium.
+
+---
+
+## 11. Generate `generated-Standalone` by doing one temporary Unity player build
+
+Opening the Unity project is usually enough to create **`generated-Editor`**, but **not** necessarily **`generated-Standalone`**.
+
+To get `generated-Standalone`, you must temporarily make a Unity player build once:
+
+1. open the project in Unity
+2. go to **File → Build Settings**
+3. select **Linux** as the target platform
+4. click **Build**
+5. choose any temporary output folder
+6. wait until Unity has finished the player build preparation
+
+After that, re-check:
+
+```bash
+cd /path/to/YourUnityProject/Packages/com.cesium.unity
+find native~ -maxdepth 2 -type d -name "generated-*"
+```
+
+You should now have a **`generated-Standalone`** folder as well.
+
+You can discard the temporary built game afterward. The important result is that Unity has generated the **Standalone** Reinterop bridge.
+
+### Why this step is required
+
+A Standalone/runtime native build with `-DEDITOR=OFF` must consume **`generated-Standalone`**.
+
+If that folder does not exist yet, the runtime native build will fail or will point at the wrong bridge.
+
+---
+
+## 12. Build the Standalone/runtime native plugin
+
+After `generated-Standalone` exists, build the runtime native plugin:
 
 ```bash
 cd /path/to/YourUnityProject/Packages/com.cesium.unity/native~
@@ -392,64 +497,64 @@ cmake --build build-Standalone --target install --parallel $(nproc)
 
 This is the **Standalone/runtime** native plugin build.
 
-This is the build path that matters for the final delivered game. In this Linux workflow it is the recommended target to establish early, because it is the runtime-side native library you ultimately need for shipping the game.
+It must pair with:
 
-Once Unity has generated `generated-Standalone`, this is the preferred build to use.
+- `generated-Standalone`
+- `-DEDITOR=OFF`
 
----
-
-### 8B. Build type 2: `build-Editor`
-
-Use this if you specifically want to build against the Editor-generated bridge.
-
-```bash
-cd /path/to/YourUnityProject/Packages/com.cesium.unity/native~
-
-rm -rf build-Editor
-cmake -B build-Editor -S . \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DVCPKG_TRIPLET=x64-linux-unity \
-  -DVCPKG_OVERLAY_TRIPLETS=$(pwd)/vcpkg/triplets \
-  -DEDITOR=ON \
-  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-
-cmake --build build-Editor --target install --parallel $(nproc)
-```
-
-### What this build is for
-
-This is the **Editor** native plugin build. It uses the `generated-Editor` bridge.
-
-Use it when you want the explicit Editor target, or when you are testing purely editor-side native integration.
+This native plugin is for the **final Linux game/player runtime**, not for the Unity Editor process.
 
 ---
 
-## 10. Restart Unity
-
-After the native build installs successfully, reopen the Unity project.
-
-At that point Unity should be able to load the installed native plugin instead of throwing `DllNotFoundException`.
-
----
-
-## 11. Done
+## 13. Final result
 
 With these changes:
 
 - Reinterop is published in a form Unity can load.
 - Cesium is allowed to compile on Linux.
-- the `DotNet/...` bridge headers are generated correctly.
+- the generated `DotNet/...` bridge headers are generated correctly.
 - `UnityWebRequestAssetAccessor.*` is patched for this Linux toolchain.
-- you can build either:
-  - an **Editor** native plugin with `-DEDITOR=ON`
-  - a **Standalone/runtime** native plugin with `-DEDITOR=OFF`
+- the **Editor** native plugin is built first and used by the Unity Editor.
+- the **Standalone/runtime** native plugin is built later and used by the final Linux player.
+
+---
+
+## Recommended exact workflow summary
 
 For this Ubuntu/Linux workflow, the recommended path is:
 
-1. prepare Reinterop
-2. open Unity once
-3. do one temporary Unity player build to force `generated-Standalone`
-4. patch `UnityWebRequestAssetAccessor.*`
-5. build native code with **`build-Standalone`**
+### Stage 1 — Make Unity Editor work
 
-That gives you the most useful runtime-native setup first, while still leaving the Editor build path available when needed.
+1. clone Cesium into `Packages/com.cesium.unity`
+2. patch `Reinterop~/Reinterop.csproj`
+3. patch `Source/CesiumForUnity.asmdef`
+4. publish `Reinterop.dll`
+5. patch `native~/CMakeLists.txt`
+6. patch `UnityWebRequestAssetAccessor.h/.cpp`
+7. create `native~/vcpkg/triplets/x64-linux-unity.cmake`
+8. open Unity once to generate **`generated-Editor`**
+9. build native with **`build-Editor`** and **`-DEDITOR=ON`**
+10. reopen Unity and confirm the editor works
+
+### Stage 2 — Prepare the delivered Linux player/runtime
+
+11. do one temporary Unity Linux player build to force **`generated-Standalone`**
+12. build native with **`build-Standalone`** and **`-DEDITOR=OFF`**
+13. use that runtime plugin path for the final delivered Linux game
+
+---
+
+## Troubleshooting note about the most common misunderstanding
+
+If Unity Editor is throwing errors but you already built `build-Standalone`, that does **not** prove the Editor native setup is correct.
+
+A successful Standalone build only proves that the **runtime/player** native plugin path was built.
+
+It does **not** replace the need for the **Editor** native plugin.
+
+If the Editor still fails, go back and verify:
+
+- `generated-Editor` exists
+- you built with `-DEDITOR=ON`
+- the installed Editor plugin was updated
+- you did not accidentally leave a stale `Packages/com.cesium.unity/Editor/libCesiumForUnityNative.so` in place from an older build
